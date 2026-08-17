@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Bitácora — Seguimiento de trabajos (sincronizada)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --ink:#152231;
+    --ink-soft:#4a5a6b;
+    --paper:#eef1f4;
+    --card:#ffffff;
+    --line:#d7dee5;
+    --teal:#1f6f78;
+    --teal-deep:#124047;
+    --amber:#c9862c;
+    --red:#b8394a;
+    --green:#3c8c63;
+    --shadow: 0 1px 2px rgba(21,34,49,0.06), 0 8px 24px rgba(21,34,49,0.06);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px;}
+
+  /* HEADER */
+  header.top{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    margin-bottom:22px;flex-wrap:wrap;gap:14px;
+  }
+  .brand{display:flex;flex-direction:column;gap:2px;}
+  .brand .eyebrow{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--teal-deep);font-weight:500;
+  }
+  .brand h1{
+    font-family:'Space Grotesk',sans-serif;font-size:30px;margin:0;font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  .top-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  button{font-family:'Inter',sans-serif;cursor:pointer;}
+  .btn{
+    border:1px solid var(--line);background:var(--card);color:var(--ink);
+    padding:9px 14px;border-radius:8px;font-size:13.5px;font-weight:600;
+    display:inline-flex;align-items:center;gap:6px;transition:.15s;
+  }
+  .btn:hover{border-color:var(--teal);color:var(--teal-deep);}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .btn.primary:hover{background:var(--teal-deep);border-color:var(--teal-deep);color:#fff;}
+
+  /* SUMMARY STRIP */
+  .strip{
+    display:grid;grid-template-columns:repeat(5,1fr);gap:1px;
+    background:var(--line);border:1px solid var(--line);border-radius:12px;
+    overflow:hidden;margin-bottom:20px;box-shadow:var(--shadow);
+  }
+  .stat{background:var(--card);padding:16px 14px;}
+  .stat .n{font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;line-height:1;}
+  .stat .l{font-size:11.5px;color:var(--ink-soft);margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+  .stat.warn .n{color:var(--amber);}
+  .stat.bad .n{color:var(--red);}
+  .stat.good .n{color:var(--green);}
+
+  /* ALERTS */
+  #alerts{margin-bottom:20px;display:flex;flex-direction:column;gap:8px;}
+  .alert{
+    display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:9px;
+    font-size:13.5px;font-weight:500;border:1px solid transparent;
+  }
+  .alert .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .alert.red{background:#fbebec;color:#7a2531;border-color:#f1c9cd;}
+  .alert.red .dot{background:var(--red);}
+  .alert.amber{background:#fbf1e2;color:#7a521a;border-color:#f0dcb8;}
+  .alert.amber .dot{background:var(--amber);}
+  .alert b{font-weight:700;}
+
+  /* FILTER BAR */
+  .filterbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+  .chip{
+    padding:6px 13px;border-radius:20px;border:1px solid var(--line);background:var(--card);
+    font-size:12.5px;font-weight:600;color:var(--ink-soft);
+  }
+  .chip.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .filterbar select{
+    margin-left:auto;border:1px solid var(--line);border-radius:8px;padding:7px 10px;
+    font-size:12.5px;font-family:'Inter',sans-serif;background:var(--card);color:var(--ink);
+  }
+
+  /* TASK CARD */
+  #list{display:flex;flex-direction:column;gap:10px;}
+  .task{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+    box-shadow:var(--shadow);
+  }
+  .task-top{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px;}
+  .task-title{font-weight:700;font-size:15.5px;}
+  .task-desc{font-size:13px;color:var(--ink-soft);margin-top:3px;max-width:60ch;}
+  .badge{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:500;padding:3px 8px;
+    border-radius:5px;white-space:nowrap;height:fit-content;text-transform:uppercase;letter-spacing:.03em;
+  }
+  .badge.red{background:#fbebec;color:var(--red);}
+  .badge.amber{background:#fbf1e2;color:var(--amber);}
+  .badge.green{background:#e8f3ec;color:var(--green);}
+  .badge.gray{background:#eef1f4;color:var(--ink-soft);}
+
+  .meta-row{display:flex;gap:18px;font-size:12.5px;color:var(--ink-soft);margin-bottom:12px;flex-wrap:wrap;}
+  .meta-row span b{color:var(--ink);font-weight:600;}
+
+  .colab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+  .colab-chip{
+    display:inline-flex;align-items:center;gap:5px;background:#eef1f4;color:var(--ink-soft);
+    font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:14px;
+  }
+  .colab-chip::before{content:'●';font-size:7px;color:var(--teal);}
+
+  /* dual-track ritmo bar — signature element */
+  .ritmo{position:relative;height:22px;background:#eef1f4;border-radius:6px;overflow:hidden;margin-bottom:8px;}
+  .ritmo .time-mark{
+    position:absolute;top:0;bottom:0;width:2px;background:var(--ink);opacity:.55;z-index:3;
+  }
+  .ritmo .fill{
+    position:absolute;top:0;left:0;bottom:0;border-radius:6px;
+    display:flex;align-items:center;transition:width .3s;
+  }
+  .ritmo .fill span{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#fff;padding-left:8px;font-weight:500;
+  }
+  .ritmo-caption{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;margin-bottom:12px;}
+
+  .task-actions{display:flex;gap:16px;font-size:12.5px;}
+  .task-actions a{color:var(--teal-deep);font-weight:600;cursor:pointer;text-decoration:none;}
+  .task-actions a:hover{text-decoration:underline;}
+  .task-actions a.del{color:var(--red);}
+
+  .range{-webkit-appearance:none;width:100%;height:4px;background:var(--line);border-radius:2px;outline:none;margin:0;}
+  .range::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--teal);cursor:pointer;border:2px solid #fff;box-shadow:0 0 0 1px var(--teal);}
+
+  .hist-toggle{
+    display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--teal-deep);
+    cursor:pointer;padding-top:10px;margin-top:8px;border-top:1px solid var(--line);user-select:none;
+  }
+  .hist-toggle .chev{font-size:9px;}
+  .hist-panel{margin-top:10px;display:flex;flex-direction:column;}
+  .hist-item{display:flex;gap:12px;padding:6px 0 6px 14px;border-left:2px solid var(--line);position:relative;}
+  .hist-item::before{content:'';position:absolute;left:-5px;top:12px;width:8px;height:8px;border-radius:50%;background:var(--teal);border:2px solid var(--card);}
+  .hist-item:last-child{border-left:2px solid transparent;}
+  .hist-when{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);white-space:nowrap;width:95px;flex-shrink:0;padding-top:1px;}
+  .hist-what{font-size:12px;color:var(--ink);flex:1;}
+  .hist-what b{font-weight:700;}
+  .hist-edit{
+    color:var(--teal-deep);opacity:.5;cursor:pointer;font-size:12px;flex-shrink:0;
+    padding:0 4px;line-height:1;
+  }
+  .hist-edit:hover{opacity:1;}
+  .hist-del{
+    color:var(--red);opacity:.5;cursor:pointer;font-size:13px;font-weight:700;flex-shrink:0;
+    padding:0 4px;line-height:1;
+  }
+  .hist-del:hover{opacity:1;}
+  .hist-empty{font-size:12px;color:var(--ink-soft);padding:6px 0;}
+
+  .empty{
+    text-align:center;padding:60px 20px;color:var(--ink-soft);
+  }
+  .empty .big{font-family:'Space Grotesk',sans-serif;font-size:18px;color:var(--ink);margin-bottom:6px;font-weight:600;}
+
+  /* MODAL */
+  .overlay{
+    position:fixed;inset:0;background:rgba(21,34,49,.45);display:none;
+    align-items:center;justify-content:center;z-index:50;padding:20px;
+  }
+  .overlay.show{display:flex;}
+  .modal{
+    background:var(--card);border-radius:14px;padding:26px;width:100%;max-width:460px;
+    box-shadow:0 20px 60px rgba(0,0,0,.25);
+  }
+  .modal h2{font-family:'Space Grotesk',sans-serif;font-size:19px;margin:0 0 16px;}
+  .field{margin-bottom:13px;}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px;text-transform:uppercase;letter-spacing:.03em;}
+  .field input, .field textarea, .field select{
+    width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;
+    font-family:'Inter',sans-serif;font-size:13.5px;color:var(--ink);background:#fbfcfd;
+  }
+  .field textarea{resize:vertical;min-height:56px;}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
+
+  /* toast */
+  #toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;
+    opacity:0;pointer-events:none;transition:opacity .25s;z-index:99;font-weight:500;
+  }
+  #toast.show{opacity:1;}
+
+  @media(max-width:640px){
+    .strip{grid-template-columns:repeat(2,1fr);}
+    .two-col{grid-template-columns:1fr;}
+    .filterbar select{margin-left:0;}
+  }
+
+  /* CHART PANEL */
+  .chart-panel{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px 22px;margin-bottom:18px;box-shadow:var(--shadow);
+  }
+  .chart-panel h3{
+    font-family:'Space Grotesk',sans-serif;font-size:15px;margin:0 0 4px;font-weight:700;
+  }
+  .chart-panel .sub{font-size:12px;color:var(--ink-soft);margin-bottom:16px;}
+  .chart-donut-row{display:flex;gap:28px;align-items:center;margin-bottom:20px;flex-wrap:wrap;}
+  .gauge-block{display:flex;align-items:center;gap:14px;}
+  .gauge-label{font-size:11.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;max-width:80px;}
+  .chart-legend{display:flex;flex-direction:column;gap:6px;font-size:12.5px;}
+  .chart-legend .li{display:flex;align-items:center;gap:7px;}
+  .chart-legend .sw{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
+  .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
+  .bar-row .name{width:150px;flex-shrink:0;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .bar-row .track{flex:1;height:14px;background:#eef1f4;border-radius:4px;overflow:hidden;}
+  .bar-row .track .fill2{height:100%;border-radius:4px;}
+  .bar-row .pct{width:38px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft);}
+
+  /* LOGIN */
+  #loginScreen{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:var(--paper);
+  }
+  .login-card{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:32px;width:100%;max-width:380px;box-shadow:var(--shadow);
+  }
+  .login-card h1{font-family:'Space Grotesk',sans-serif;font-size:22px;margin:0 0 4px;}
+  .login-card .sub{font-size:13px;color:var(--ink-soft);margin-bottom:22px;}
+  .login-err{
+    background:#fbebec;color:#7a2531;border:1px solid #f1c9cd;border-radius:8px;
+    padding:9px 12px;font-size:12.5px;margin-bottom:14px;display:none;
+  }
+  .login-toggle{text-align:center;margin-top:14px;font-size:12.5px;color:var(--ink-soft);}
+  .login-toggle a{color:var(--teal-deep);font-weight:600;cursor:pointer;}
+  #appScreen{display:none;}
+  .user-badge{font-size:12px;color:var(--ink-soft);margin-right:4px;align-self:center;}
+
+  @media print{
+    body{background:#fff;}
+    .top-actions,.filterbar,.task-actions,#alerts,.btn{display:none !important;}
+    .task{break-inside:avoid;box-shadow:none;border:1px solid #ccc;}
+  }
+</style>
+</head>
+<body>
+<div id="loginScreen">
+  <div class="login-card">
+    <h1 id="loginTitle">Iniciar sesión</h1>
+    <div class="sub">Accede a tu bitácora de trabajos desde cualquier dispositivo.</div>
+    <div class="login-err" id="loginErr"></div>
+    <div class="field">
+      <label>Correo</label>
+      <input type="email" id="login-email" placeholder="tucorreo@ejemplo.com">
+    </div>
+    <div class="field">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="Mínimo 6 caracteres">
+    </div>
+    <button class="btn primary" style="width:100%;justify-content:center;" id="loginBtn" onclick="handleAuth()">Iniciar sesión</button>
+    <div class="login-toggle" id="loginToggleWrap">
+      ¿No tienes cuenta? <a onclick="toggleAuthMode()">Crear una</a>
+    </div>
+  </div>
+</div>
+
+<div id="appScreen">
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <span class="eyebrow">Bitácora personal</span>
+      <h1>Seguimiento de trabajos</h1>
+    </div>
+    <div class="top-actions">
+      <span class="user-badge" id="userBadge"></span>
+      <button class="btn" onclick="exportCSV()">⬇ Exportar CSV</button>
+      <button class="btn" onclick="copyResumen()">⎘ Copiar resumen</button>
+      <button class="btn" onclick="descargarPDF()">📄 Descargar PDF</button>
+      <button class="btn" id="chartToggleBtn" onclick="toggleChart()">📊 Gráfico</button>
+      <button class="btn primary" onclick="openModal()">+ Nuevo trabajo</button>
+      <button class="btn" onclick="cerrarSesion()">Salir</button>
+    </div>
+  </header>
+
+  <div class="chart-panel" id="planDiaCard" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h3 style="margin:0;">🧠 Plan del día</h3>
+        <div class="sub" id="planDiaFecha"></div>
+      </div>
+      <button class="btn" onclick="generarPlanDia(true)">🔄 Actualizar plan</button>
+    </div>
+    <div id="planDiaLista" style="margin-top:14px;"></div>
+  </div>
+
+  <div class="strip" id="strip"></div>
+  <div id="alerts"></div>
+  <div class="chart-panel" id="chartPanel" style="display:none;">
+    <h3>Cómo van tus trabajos</h3>
+    <div class="sub">Distribución por estado y avance individual de cada trabajo</div>
+    <div class="chart-donut-row">
+      <div class="gauge-block">
+        <svg id="avgGaugeSvg" width="110" height="110" viewBox="0 0 120 120"></svg>
+        <div class="gauge-label">Avance general</div>
+      </div>
+      <div class="gauge-block">
+        <svg id="donutSvg" width="110" height="110" viewBox="0 0 120 120"></svg>
+        <div class="chart-legend" id="chartLegend"></div>
+      </div>
+    </div>
+    <div id="barsChart"></div>
+  </div>
+
+  <div class="filterbar" id="filterbar">
+    <div class="chip active" data-f="todos">Todos</div>
+    <div class="chip" data-f="atrasado">Atrasados</div>
+    <div class="chip" data-f="urgente">Urgentes</div>
+    <div class="chip" data-f="a-tiempo">A tiempo</div>
+    <div class="chip" data-f="sin-fecha">Pendiente de revisión</div>
+    <div class="chip" data-f="completado">Completados</div>
+    <div class="chip" data-f="cerrado">Cerrados / No aplica</div>
+    <select id="sortSel">
+      <option value="fecha">Ordenar: fecha de entrega</option>
+      <option value="avance">Ordenar: % avance</option>
+      <option value="prioridad">Ordenar: prioridad</option>
+    </select>
+  </div>
+
+  <div id="list"></div>
+</div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="modalTitle">Nuevo trabajo</h2>
+    <input type="hidden" id="editId">
+    <div class="field">
+      <label>Título</label>
+      <input id="f-titulo" placeholder="Ej. Informe mensual de ventas">
+    </div>
+    <div class="field">
+      <label>Descripción (opcional)</label>
+      <textarea id="f-desc" placeholder="Detalles del trabajo asignado"></textarea>
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <label>Fecha de inicio</label>
+        <input type="date" id="f-inicio">
+      </div>
+      <div class="field">
+        <label>Fecha de entrega (opcional)</label>
+        <input type="date" id="f-entrega">
+      </div>
+    </div>
+    <div class="field">
+      <label>Colaboradores (opcional)</label>
+      <input id="f-colab" placeholder="Ej. Juan Pérez, María Rojas">
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <label>Prioridad</label>
+        <select id="f-prioridad">
+          <option value="alta">Alta</option>
+          <option value="media" selected>Media</option>
+          <option value="baja">Baja</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>% de avance</label>
+        <input type="number" id="f-avance" min="0" max="100" value="0">
+      </div>
+    </div>
+    <div class="field">
+      <label>Nota sobre este avance (opcional)</label>
+      <input id="f-avance-nota" placeholder="Ej. Terminé la sección de anexos">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" onclick="saveTask()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="noteOverlay">
+  <div class="modal" style="max-width:380px;">
+    <h2>¿Qué avanzaste?</h2>
+    <div class="sub" style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px;" id="noteAvanceLine"></div>
+    <div class="field">
+      <label>Descripción (opcional)</label>
+      <textarea id="noteText" placeholder="Ej. Terminé la sección de anexos"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="confirmAvanceChange(false)">Guardar sin nota</button>
+      <button class="btn primary" onclick="confirmAvanceChange(true)">Guardar con nota</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let tasks = [];
+let filterMode = 'todos';
+
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function uid(){ return 't' + Date.now() + Math.random().toString(36).slice(2,7); }
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAH5FP9zXez3jNufiLLgGBopwsgyJbBiCI",
+  authDomain: "mi-bitacora-trabajos-bn.firebaseapp.com",
+  projectId: "mi-bitacora-trabajos-bn",
+  storageBucket: "mi-bitacora-trabajos-bn.firebasestorage.app",
+  messagingSenderId: "981470612337",
+  appId: "1:981470612337:web:c1cb363e61e9324b4e44d0"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+let currentUser = null;
+let unsubscribeTasks = null;
+let authMode = 'login';
+
+function toggleAuthMode(){
+  authMode = authMode === 'login' ? 'signup' : 'login';
+  document.getElementById('loginTitle').textContent = authMode === 'login' ? 'Iniciar sesión' : 'Crear cuenta';
+  document.getElementById('loginBtn').textContent = authMode === 'login' ? 'Iniciar sesión' : 'Crear cuenta';
+  document.getElementById('loginToggleWrap').innerHTML = authMode === 'login'
+    ? '¿No tienes cuenta? <a onclick="toggleAuthMode()">Crear una</a>'
+    : '¿Ya tienes cuenta? <a onclick="toggleAuthMode()">Inicia sesión</a>';
+  document.getElementById('loginErr').style.display = 'none';
+}
+
+function showLoginError(msg){
+  const el = document.getElementById('loginErr');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function handleAuth(){
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  if(!email || !pass){ showLoginError('Completa correo y contraseña.'); return; }
+  try{
+    if(authMode === 'login'){
+      await auth.signInWithEmailAndPassword(email, pass);
+    } else {
+      await auth.createUserWithEmailAndPassword(email, pass);
+    }
+  }catch(e){
+    const map = {
+      'auth/invalid-email':'El correo no es válido.',
+      'auth/user-not-found':'No existe una cuenta con ese correo.',
+      'auth/wrong-password':'Contraseña incorrecta.',
+      'auth/email-already-in-use':'Ya existe una cuenta con ese correo.',
+      'auth/weak-password':'La contraseña debe tener al menos 6 caracteres.',
+      'auth/invalid-credential':'Correo o contraseña incorrectos.'
+    };
+    showLoginError(map[e.code] || 'Ocurrió un error, intenta de nuevo.');
+  }
+}
+
+function cerrarSesion(){
+  auth.signOut();
+}
+
+auth.onAuthStateChanged(user=>{
+  if(user){
+    currentUser = user;
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('appScreen').style.display = 'block';
+    document.getElementById('userBadge').textContent = user.email;
+    subscribeTasks();
+  } else {
+    currentUser = null;
+    if(unsubscribeTasks){ unsubscribeTasks(); unsubscribeTasks = null; }
+    tasks = [];
+    planDiaChecked = false;
+    document.getElementById('loginScreen').style.display = 'flex';
+    document.getElementById('appScreen').style.display = 'none';
+  }
+});
+
+function tasksCol(){
+  return db.collection('users').doc(currentUser.uid).collection('tasks');
+}
+
+let planDiaChecked = false;
+function subscribeTasks(){
+  unsubscribeTasks = tasksCol().onSnapshot(snapshot=>{
+    tasks = snapshot.docs.map(d=>({ id: d.id, ...d.data() }));
+    render();
+    if(!planDiaChecked){
+      planDiaChecked = true;
+      loadPlanDia();
+    }
+  }, err=>{
+    showToast('No se pudo sincronizar: ' + err.message);
+  });
+}
+
+function planDiaRef(){
+  return db.collection('users').doc(currentUser.uid).collection('planDia').doc('data');
+}
+
+async function loadPlanDia(){
+  let plan = null;
+  try{
+    const doc = await planDiaRef().get();
+    if(doc.exists) plan = doc.data();
+  }catch(e){ /* si falla, se genera de nuevo abajo */ }
+
+  if(plan && plan.fecha === todayStr() && Array.isArray(plan.items)){
+    renderPlanDia(plan);
+  } else {
+    generarPlanDia(false);
+  }
+}
+
+async function generarPlanDia(forzado){
+  const activos = tasks.filter(t=>{
+    const s = computeStatus(t);
+    return s !== 'cerrado' && s !== 'completado';
+  });
+
+  if(activos.length === 0){
+    document.getElementById('planDiaCard').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('planDiaCard').style.display = 'block';
+  document.getElementById('planDiaFecha').textContent = forzado ? 'Actualizando...' : 'Generando el plan de hoy...';
+  document.getElementById('planDiaLista').innerHTML = '<div class="sub">Esto puede tardar unos segundos.</div>';
+
+  const trabajos = activos.map(t=>({
+    titulo: t.titulo,
+    desc: t.desc || '',
+    prioridad: t.prioridad,
+    avance: t.avance,
+    entrega: t.entrega || '',
+    estado: statusMeta(computeStatus(t)).label
+  }));
+
+  try{
+    const resp = await fetch('/.netlify/functions/generate-daily-plan', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify({ trabajos })
+    });
+    const data = await resp.json();
+    if(!resp.ok){
+      showToast('Error al generar el plan: ' + (data.error ? JSON.stringify(data.error).slice(0,120) : 'desconocido'));
+      document.getElementById('planDiaCard').style.display = 'none';
+      return;
+    }
+    let texto = (data.texto || '').trim();
+    const inicio = texto.indexOf('[');
+    const fin = texto.lastIndexOf(']');
+    if(inicio !== -1 && fin !== -1) texto = texto.slice(inicio, fin+1);
+    const items = JSON.parse(texto);
+
+    const plan = { fecha: todayStr(), items };
+    await planDiaRef().set(plan, {merge:false});
+    renderPlanDia(plan);
+    showToast('Plan del día listo');
+  }catch(e){
+    showToast('No se pudo generar el plan del día, intenta de nuevo');
+    document.getElementById('planDiaCard').style.display = 'none';
+  }
+}
+
+function renderPlanDia(plan){
+  document.getElementById('planDiaCard').style.display = 'block';
+  const hoyTexto = new Date(plan.fecha + 'T00:00:00').toLocaleDateString('es-CR', { weekday:'long', day:'2-digit', month:'long' });
+  document.getElementById('planDiaFecha').textContent = hoyTexto.charAt(0).toUpperCase() + hoyTexto.slice(1);
+
+  const box = document.getElementById('planDiaLista');
+  const items = plan.items || [];
+  if(items.length === 0){
+    box.innerHTML = '<div class="sub">No hay trabajos activos que requieran atención hoy.</div>';
+    return;
+  }
+  box.innerHTML = items.map((it, i)=>`
+    <div style="padding:10px 0;border-top:1px solid var(--line);">
+      <div style="font-weight:700;">${i+1}. ${escapeHtml(it.titulo || '')}</div>
+      <div class="sub" style="margin-top:2px;">${escapeHtml(it.accion || '')}</div>
+      ${it.motivo ? `<div class="sub" style="margin-top:2px;font-style:italic;">${escapeHtml(it.motivo)}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+async function addHistory(taskId, entry){
+  try{
+    const payload = typeof entry === 'string' ? { texto: entry } : Object.assign({}, entry);
+    payload.fecha = firebase.firestore.FieldValue.serverTimestamp();
+    await tasksCol().doc(taskId).collection('historial').add(payload);
+  }catch(e){}
+}
+
+async function persistTask(t, notes){
+  const data = {
+    titulo: t.titulo, desc: t.desc||'', inicio: t.inicio, entrega: t.entrega,
+    prioridad: t.prioridad, avance: t.avance, colaboradores: t.colaboradores||[],
+    cerrado: !!t.cerrado
+  };
+  try{
+    if(t.id){
+      await tasksCol().doc(t.id).set(data, {merge:true});
+      if(notes && notes.length){
+        for(const n of notes) await addHistory(t.id, n);
+      }
+    } else {
+      const ref = await tasksCol().add(data);
+      t.id = ref.id;
+      await addHistory(t.id, t.entrega ? `Trabajo creado — entrega: ${fmtDate(t.entrega)}` : `Trabajo creado — pendiente de revisión, sin fecha de entrega`);
+    }
+  }catch(e){ showToast('No se pudo guardar en la nube'); }
+}
+async function removeTaskStorage(id){
+  try{ await tasksCol().doc(id).delete(); }catch(e){ showToast('No se pudo eliminar'); }
+}
+
+let expandedHistory = {};
+
+function toggleHistory(id){
+  expandedHistory[id] = !expandedHistory[id];
+  const panel = document.getElementById('hist-'+id);
+  const chev = document.getElementById('chev-'+id);
+  if(!panel) return;
+  if(expandedHistory[id]){
+    panel.style.display = 'block';
+    chev.textContent = '▾';
+    loadHistory(id);
+  } else {
+    panel.style.display = 'none';
+    chev.textContent = '▸';
+  }
+}
+
+function fmtDateTime(date){
+  const d = String(date.getDate()).padStart(2,'0');
+  const m = String(date.getMonth()+1).padStart(2,'0');
+  let h = date.getHours();
+  const min = String(date.getMinutes()).padStart(2,'0');
+  const ampm = h>=12 ? 'pm' : 'am';
+  h = h%12; if(h===0) h=12;
+  return `${d}/${m}, ${h}:${min}${ampm}`;
+}
+
+let historyCache = {};
+
+async function editHistoryItem(taskId, histId){
+  const entries = historyCache[taskId] || [];
+  const entry = entries.find(e=>e.id === histId);
+  if(!entry) return;
+  const nuevoTexto = prompt('Editar este registro del historial:', entry.texto);
+  if(nuevoTexto === null) return; // canceló
+  const limpio = nuevoTexto.trim();
+  if(!limpio || limpio === entry.texto) return;
+  try{
+    await tasksCol().doc(taskId).collection('historial').doc(histId).update({ texto: limpio });
+    loadHistory(taskId);
+  }catch(e){ showToast('No se pudo editar ese registro'); }
+}
+
+async function deleteHistoryItem(taskId, histId){
+  try{
+    const ref = tasksCol().doc(taskId).collection('historial').doc(histId);
+    const snap = await ref.get();
+    const data = snap.exists ? snap.data() : null;
+    let revertTo = null;
+    if(data && data.tipo === 'avance' && typeof data.anterior === 'number'){
+      const quiere = confirm(`¿Quieres también devolver el % de avance del trabajo a ${data.anterior}%?`);
+      if(quiere) revertTo = data.anterior;
+    }
+    await ref.delete();
+    if(revertTo !== null){
+      await tasksCol().doc(taskId).update({ avance: revertTo });
+    }
+    loadHistory(taskId);
+  }catch(e){ showToast('No se pudo eliminar ese registro'); }
+}
+
+async function loadHistory(id){
+  const panel = document.getElementById('hist-'+id);
+  if(!panel) return;
+  panel.innerHTML = `<div class="hist-empty">Cargando...</div>`;
+  try{
+    const snap = await tasksCol().doc(id).collection('historial').orderBy('fecha','desc').limit(25).get();
+    if(snap.empty){
+      panel.innerHTML = `<div class="hist-empty">Sin registros todavía.</div>`;
+      historyCache[id] = [];
+      return;
+    }
+    historyCache[id] = snap.docs.map(d=>({ id: d.id, texto: d.data().texto || '' }));
+    panel.innerHTML = snap.docs.map(d=>{
+      const data = d.data();
+      const when = data.fecha && data.fecha.toDate ? fmtDateTime(data.fecha.toDate()) : '—';
+      return `<div class="hist-item"><div class="hist-when">${when}</div><div class="hist-what">${escapeHtml(data.texto)}</div><span class="hist-edit" title="Editar este registro" onclick="editHistoryItem('${id}','${d.id}')">✎</span><span class="hist-del" title="Eliminar este registro" onclick="deleteHistoryItem('${id}','${d.id}')">✕</span></div>`;
+    }).join('');
+  }catch(e){
+    panel.innerHTML = `<div class="hist-empty">No se pudo cargar el historial.</div>`;
+  }
+}
+
+
+function daysBetween(a,b){
+  return Math.round((new Date(b) - new Date(a)) / 86400000);
+}
+
+function compareEntrega(a,b){
+  if(!a.entrega && !b.entrega) return 0;
+  if(!a.entrega) return 1;
+  if(!b.entrega) return -1;
+  return a.entrega.localeCompare(b.entrega);
+}
+
+function computeStatus(t){
+  if(t.cerrado) return 'cerrado';
+  if(t.avance >= 100) return 'completado';
+  if(!t.entrega) return 'sin-fecha';
+  const hoy = todayStr();
+  if(t.entrega < hoy) return 'atrasado';
+  const totalDias = Math.max(daysBetween(t.inicio, t.entrega), 1);
+  const diasRestantes = daysBetween(hoy, t.entrega);
+  const pctTiempo = Math.min(100, Math.max(0, (1 - diasRestantes/totalDias) * 100));
+  // urgente si el tiempo transcurrido supera bastante al avance, o quedan <=2 días con avance bajo
+  if(diasRestantes <= 2 && t.avance < 90) return 'urgente';
+  if(pctTiempo - t.avance >= 25) return 'urgente';
+  return 'a-tiempo';
+}
+
+function statusMeta(s){
+  return {
+    'atrasado': {label:'Atrasado', cls:'red'},
+    'urgente': {label:'Urgente', cls:'amber'},
+    'a-tiempo': {label:'A tiempo', cls:'green'},
+    'completado': {label:'Completado', cls:'gray'},
+    'sin-fecha': {label:'Pendiente de revisión', cls:'gray'},
+    'cerrado': {label:'Cerrado / No aplica', cls:'gray'}
+  }[s];
+}
+
+let chartVisible = false;
+
+function render(){
+  renderStrip();
+  renderAlerts();
+  renderList();
+  if(chartVisible) renderChart();
+}
+
+function toggleChart(){
+  chartVisible = !chartVisible;
+  document.getElementById('chartPanel').style.display = chartVisible ? 'block' : 'none';
+  document.getElementById('chartToggleBtn').classList.toggle('primary', chartVisible);
+  if(chartVisible) renderChart();
+}
+
+const STATUS_COLORS = {
+  'atrasado': '#b8394a',
+  'urgente': '#c9862c',
+  'a-tiempo': '#1f6f78',
+  'completado': '#3c8c63',
+  'sin-fecha': '#94a3b8',
+  'cerrado': '#7c8b9a'
+};
+
+function renderChart(){
+  if(tasks.length===0){
+    document.getElementById('barsChart').innerHTML = `<div class="empty" style="padding:24px 0;">Agrega trabajos para ver el gráfico.</div>`;
+    document.getElementById('donutSvg').innerHTML = '';
+    document.getElementById('avgGaugeSvg').innerHTML = '';
+    document.getElementById('chartLegend').innerHTML = '';
+    return;
+  }
+  // conteo por estado
+  const counts = {atrasado:0, urgente:0, 'a-tiempo':0, completado:0, 'sin-fecha':0, cerrado:0};
+  tasks.forEach(t=>counts[computeStatus(t)]++);
+  const total = tasks.length;
+
+  // anillo de avance promedio general
+  const avgAvance = Math.round(tasks.reduce((a,t)=>a+Number(t.avance),0)/total);
+  const r2 = 50, cx2=60, cy2=60, circ2 = 2*Math.PI*r2;
+  const avgDash = (avgAvance/100)*circ2;
+  const avgColor = avgAvance>=70 ? STATUS_COLORS['completado'] : avgAvance>=40 ? STATUS_COLORS['urgente'] : STATUS_COLORS['atrasado'];
+  const avgGauge = `
+    <circle cx="${cx2}" cy="${cy2}" r="${r2}" fill="none" stroke="#eef1f4" stroke-width="16"/>
+    <circle cx="${cx2}" cy="${cy2}" r="${r2}" fill="none" stroke="${avgColor}" stroke-width="16"
+      stroke-dasharray="${avgDash} ${circ2-avgDash}" stroke-linecap="round" transform="rotate(-90 ${cx2} ${cy2})"/>
+    <text x="60" y="57" text-anchor="middle" font-family="Space Grotesk" font-size="22" font-weight="700" fill="#152231">${avgAvance}%</text>
+    <text x="60" y="74" text-anchor="middle" font-family="Inter" font-size="9" fill="#4a5a6b">promedio</text>
+  `;
+  document.getElementById('avgGaugeSvg').innerHTML = avgGauge;
+
+  // donut SVG
+  let acc = 0;
+  const r = 50, cx=60, cy=60, circ = 2*Math.PI*r;
+  let donut = '';
+  Object.keys(counts).forEach(k=>{
+    const val = counts[k];
+    if(val===0) return;
+    const frac = val/total;
+    const dash = frac*circ;
+    donut += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${STATUS_COLORS[k]}" stroke-width="16"
+      stroke-dasharray="${dash} ${circ-dash}" stroke-dashoffset="${-acc}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    acc += dash;
+  });
+  donut += `<text x="60" y="65" text-anchor="middle" font-family="Space Grotesk" font-size="20" font-weight="700" fill="#152231">${total}</text>`;
+  document.getElementById('donutSvg').innerHTML = donut;
+
+  const labels = {atrasado:'Atrasados', urgente:'Urgentes', 'a-tiempo':'A tiempo', completado:'Completados', 'sin-fecha':'Sin fecha', cerrado:'Cerrados/No aplica'};
+  document.getElementById('chartLegend').innerHTML = Object.keys(counts).map(k=>
+    `<div class="li"><span class="sw" style="background:${STATUS_COLORS[k]}"></span>${labels[k]}: <b>${counts[k]}</b></div>`
+  ).join('');
+
+  // barras por trabajo, ordenadas por fecha de entrega
+  const ordered = tasks.slice().sort(compareEntrega);
+  document.getElementById('barsChart').innerHTML = ordered.map(t=>{
+    const s = computeStatus(t);
+    return `<div class="bar-row">
+      <div class="name" title="${escapeHtml(t.titulo)}">${escapeHtml(t.titulo)}</div>
+      <div class="track"><div class="fill2" style="width:${t.avance}%;background:${STATUS_COLORS[s]};"></div></div>
+      <div class="pct">${t.avance}%</div>
+    </div>`;
+  }).join('');
+}
+
+function svgToPngDataUrl(svgEl, width, height){
+  return new Promise((resolve, reject)=>{
+    try{
+      const serializer = new XMLSerializer();
+      let svgStr = serializer.serializeToString(svgEl);
+      if(!/xmlns=/.test(svgStr)){
+        svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+      const svgBlob = new Blob([svgStr], {type:'image/svg+xml;charset=utf-8'});
+      const url = URL.createObjectURL(svgBlob);
+      const img = new Image();
+      img.onload = function(){
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0,0,width,height);
+        ctx.drawImage(img,0,0,width,height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('svg load failed')); };
+      img.src = url;
+    }catch(e){ reject(e); }
+  });
+}
+
+async function fetchHistoryEntries(taskId, limitN){
+  try{
+    const snap = await tasksCol().doc(taskId).collection('historial').orderBy('fecha','asc').limit(limitN||50).get();
+    return snap.docs.map(d=>{
+      const hd = d.data();
+      const when = hd.fecha && hd.fecha.toDate ? fmtDateTime(hd.fecha.toDate()) : '';
+      return { when, texto: hd.texto || '' };
+    });
+  }catch(e){ return []; }
+}
+
+function pdfSafe(str){
+  return (str || '')
+    .replace(/→/g, '->')
+    .replace(/[▸▾✎✕●]/g, '');
+}
+
+function hexToRgb(hex){
+  const h = hex.replace('#','');
+  return [parseInt(h.substring(0,2),16), parseInt(h.substring(2,4),16), parseInt(h.substring(4,6),16)];
+}
+
+async function descargarPDF(){
+  if(tasks.length===0){ showToast('No hay trabajos que exportar'); return; }
+  if(!window.jspdf){ showToast('No se pudo cargar el generador de PDF'); return; }
+  showToast('Generando PDF...');
+
+  const wasVisible = chartVisible;
+  if(!wasVisible){
+    chartVisible = true;
+    document.getElementById('chartPanel').style.display = 'block';
+    renderChart();
+    await new Promise(r=>setTimeout(r, 250));
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const marginX = 15;
+  let y = 20;
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  doc.text('Seguimiento de trabajos', marginX, y);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(10);
+  doc.setTextColor(90,100,110);
+  y += 7;
+  doc.text(`Generado el ${fmtDate(todayStr())}`, marginX, y);
+  doc.setTextColor(20,30,45);
+  y += 10;
+
+  try{
+    const total = tasks.length;
+    const avgAvance = Math.round(tasks.reduce((a,t)=>a+Number(t.avance),0)/total);
+    const counts = {atrasado:0, urgente:0, 'a-tiempo':0, completado:0, 'sin-fecha':0, cerrado:0};
+    tasks.forEach(t=>counts[computeStatus(t)]++);
+    const labels = {atrasado:'Atrasados', urgente:'Urgentes', 'a-tiempo':'A tiempo', completado:'Completados', 'sin-fecha':'Sin fecha', cerrado:'Cerrados/No aplica'};
+
+    const avgSvg = document.getElementById('avgGaugeSvg');
+    const donutSvg = document.getElementById('donutSvg');
+    const chartTopY = y;
+    if(avgSvg && avgSvg.innerHTML.trim()){
+      const avgImg = await svgToPngDataUrl(avgSvg, 240, 240);
+      doc.addImage(avgImg, 'PNG', marginX, y, 40, 40);
+    }
+    doc.setFontSize(8.5);
+    doc.setTextColor(90,100,110);
+    doc.text(`Avance promedio: ${avgAvance}%`, marginX + 3, y + 44);
+
+    if(donutSvg && donutSvg.innerHTML.trim()){
+      const donutImg = await svgToPngDataUrl(donutSvg, 240, 240);
+      doc.addImage(donutImg, 'PNG', marginX + 48, y, 40, 40);
+    }
+    doc.text(`Total de trabajos: ${total}`, marginX + 48 + 2, y + 44);
+
+    // leyenda con conteos y colores, a la derecha de la dona
+    let ly = chartTopY + 2;
+    const legendX = marginX + 95;
+    doc.setFontSize(9);
+    Object.keys(labels).forEach(k=>{
+      const [r,g,b] = hexToRgb(STATUS_COLORS[k]);
+      doc.setFillColor(r,g,b);
+      doc.rect(legendX, ly - 3, 3.2, 3.2, 'F');
+      doc.setTextColor(20,30,45);
+      doc.text(`${labels[k]}: ${counts[k]}`, legendX + 5, ly);
+      ly += 6;
+    });
+
+    doc.setTextColor(20,30,45);
+    y += 50;
+  }catch(e){ /* si falla la imagen, seguimos sin gráficos */ }
+
+  if(!wasVisible){
+    chartVisible = false;
+    document.getElementById('chartPanel').style.display = 'none';
+  }
+
+  doc.setDrawColor(215,222,229);
+  doc.line(marginX, y, 195, y);
+  y += 8;
+
+  const ordered = tasks.slice().sort(compareEntrega);
+  for(const t of ordered){
+    const meta = statusMeta(computeStatus(t));
+    if(y > 260){ doc.addPage(); y = 20; }
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(12);
+    doc.text(t.titulo, marginX, y);
+    y += 6;
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(10);
+    doc.text(`Estado: ${meta.label}   |   Avance: ${t.avance}%   |   Entrega: ${fmtDate(t.entrega)}   |   Prioridad: ${t.prioridad}`, marginX, y);
+    y += 6;
+    if(t.colaboradores && t.colaboradores.length){
+      doc.text(`Colaboradores: ${t.colaboradores.join(', ')}`, marginX, y);
+      y += 6;
+    }
+    if(t.desc){
+      const lines = doc.splitTextToSize(t.desc, 180);
+      doc.text(lines, marginX, y);
+      y += lines.length*5;
+    }
+
+    const hist = await fetchHistoryEntries(t.id, 30);
+    if(hist.length){
+      y += 2;
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(9);
+      doc.setTextColor(90,100,110);
+      if(y > 270){ doc.addPage(); y = 20; }
+      doc.text('Historial de avance:', marginX, y);
+      y += 5;
+      doc.setFont('helvetica','normal');
+      hist.forEach(h=>{
+        const wrapped = doc.splitTextToSize(`• ${h.when} — ${pdfSafe(h.texto)}`, 175);
+        const blockHeight = wrapped.length*4.2;
+        if(y + blockHeight > 285){ doc.addPage(); y = 20; }
+        doc.text(wrapped, marginX + 2, y);
+        y += blockHeight;
+      });
+      doc.setTextColor(20,30,45);
+      doc.setFontSize(10);
+    }
+
+    y += 4;
+    doc.setDrawColor(215,222,229);
+    doc.line(marginX, y, 195, y);
+    y += 8;
+  }
+
+  const blobGeneral = doc.output('blob');
+  const urlGeneral = URL.createObjectURL(blobGeneral);
+  const aGeneral = document.createElement('a');
+  aGeneral.href = urlGeneral;
+  aGeneral.download = `seguimiento-trabajos-${todayStr()}.pdf`;
+  document.body.appendChild(aGeneral);
+  aGeneral.click();
+  document.body.removeChild(aGeneral);
+  setTimeout(()=>URL.revokeObjectURL(urlGeneral), 2000);
+  showToast('PDF descargado');
+}
+
+async function descargarPDFTarea(id){
+  const t = tasks.find(x=>x.id===id);
+  if(!t){ showToast('No se encontró el trabajo'); return; }
+  if(!window.jspdf){ showToast('No se pudo cargar el generador de PDF'); return; }
+  showToast('Generando PDF del trabajo...');
+
+  try{
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const marginX = 15;
+    let y = 20;
+    const meta = statusMeta(computeStatus(t));
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(16);
+    const titleLines = doc.splitTextToSize(t.titulo || 'Trabajo', 180);
+    doc.text(titleLines, marginX, y);
+    y += titleLines.length*7 + 2;
+
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(10);
+    doc.setTextColor(90,100,110);
+    doc.text(`Generado el ${fmtDate(todayStr())}`, marginX, y);
+    doc.setTextColor(20,30,45);
+    y += 9;
+
+    doc.setFontSize(11);
+    doc.text(`Estado: ${meta.label}`, marginX, y); y += 6;
+    doc.text(`Avance actual: ${Number(t.avance)||0}%`, marginX, y); y += 6;
+    doc.text(`Prioridad: ${t.prioridad || '—'}`, marginX, y); y += 6;
+    doc.text(`Entrega: ${fmtDate(t.entrega)}`, marginX, y); y += 6;
+    if(t.colaboradores && t.colaboradores.length){
+      doc.text(`Colaboradores: ${t.colaboradores.join(', ')}`, marginX, y); y += 6;
+    }
+    if(t.desc){
+      const lines = doc.splitTextToSize(t.desc, 180);
+      doc.text(lines, marginX, y);
+      y += lines.length*5;
+    }
+    y += 4;
+
+    const avanceNum = Math.min(100, Math.max(0, Number(t.avance)||0));
+    doc.setDrawColor(215,222,229);
+    doc.setFillColor(238,241,244);
+    doc.rect(marginX, y, 180, 6, 'F');
+    doc.setFillColor(31,111,120);
+    doc.rect(marginX, y, 180*(avanceNum/100), 6, 'F');
+    y += 14;
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(12);
+    doc.text('Historial de avance', marginX, y);
+    y += 7;
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(9.5);
+
+    const hist = await fetchHistoryEntries(t.id, 100);
+    if(hist.length === 0){
+      doc.setTextColor(90,100,110);
+      doc.text('Sin registros en el historial.', marginX, y);
+      doc.setTextColor(20,30,45);
+    } else {
+      hist.forEach(h=>{
+        const wrapped = doc.splitTextToSize(`${h.when} — ${pdfSafe(h.texto)}`, 180);
+        const blockHeight = wrapped.length*5;
+        if(y + blockHeight > 285){ doc.addPage(); y = 20; }
+        doc.text(wrapped, marginX, y);
+        y += blockHeight;
+      });
+    }
+
+    const safeName = (t.titulo || 'trabajo').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'trabajo';
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeName}-${todayStr()}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+    showToast('PDF del trabajo descargado');
+  }catch(e){
+    showToast('Error al generar el PDF: ' + (e.message || 'desconocido'));
+  }
+}
+
+function renderStrip(){
+  const total = tasks.length;
+  const avg = total ? Math.round(tasks.reduce((a,t)=>a+Number(t.avance),0)/total) : 0;
+  const atrasados = tasks.filter(t=>computeStatus(t)==='atrasado').length;
+  const urgentes = tasks.filter(t=>computeStatus(t)==='urgente').length;
+  const activos = tasks.filter(t=>!['completado','cerrado'].includes(computeStatus(t))).length;
+  document.getElementById('strip').innerHTML = `
+    <div class="stat"><div class="n">${total}</div><div class="l">Total de trabajos</div></div>
+    <div class="stat"><div class="n">${activos}</div><div class="l">Activos</div></div>
+    <div class="stat good"><div class="n">${avg}%</div><div class="l">Avance promedio</div></div>
+    <div class="stat warn"><div class="n">${urgentes}</div><div class="l">Urgentes</div></div>
+    <div class="stat bad"><div class="n">${atrasados}</div><div class="l">Atrasados</div></div>
+  `;
+}
+
+function renderAlerts(){
+  const box = document.getElementById('alerts');
+  const problemas = tasks.filter(t=>['atrasado','urgente'].includes(computeStatus(t)));
+  if(problemas.length===0){ box.innerHTML=''; return; }
+  box.innerHTML = problemas.slice(0,4).map(t=>{
+    const s = computeStatus(t);
+    const dias = daysBetween(todayStr(), t.entrega);
+    const texto = s==='atrasado'
+      ? `<b>${t.titulo}</b> está atrasado — venció hace ${Math.abs(dias)} día(s).`
+      : `<b>${t.titulo}</b> necesita atención — quedan ${dias} día(s) y el avance va en ${t.avance}%.`;
+    return `<div class="alert ${s==='atrasado'?'red':'amber'}"><span class="dot"></span> ${texto}</div>`;
+  }).join('');
+}
+
+function renderList(){
+  const list = document.getElementById('list');
+  let filtered = tasks.filter(t => filterMode==='todos' || computeStatus(t)===filterMode);
+
+  const sortBy = document.getElementById('sortSel').value;
+  filtered = filtered.slice().sort((a,b)=>{
+    if(sortBy==='fecha') return compareEntrega(a,b);
+    if(sortBy==='avance') return a.avance - b.avance;
+    if(sortBy==='prioridad'){ const o={alta:0,media:1,baja:2}; return o[a.prioridad]-o[b.prioridad]; }
+    return 0;
+  });
+
+  if(filtered.length===0){
+    list.innerHTML = `<div class="empty"><div class="big">Nada por aquí</div>Agrega un trabajo para empezar a llevar el seguimiento.</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(t=>{
+    const s = computeStatus(t);
+    const meta = statusMeta(s);
+    const hoy = todayStr();
+    const hasFecha = !!t.entrega;
+    const totalDias = hasFecha ? Math.max(daysBetween(t.inicio, t.entrega),1) : 1;
+    const diasRestantes = hasFecha ? daysBetween(hoy, t.entrega) : null;
+    const pctTiempo = hasFecha ? Math.min(100, Math.max(0,(1 - diasRestantes/totalDias)*100)) : 0;
+    const barColor = s==='atrasado' ? 'var(--red)' : s==='urgente' ? 'var(--amber)' : s==='completado' ? 'var(--green)' : 'var(--teal)';
+
+    return `
+    <div class="task">
+      <div class="task-top">
+        <div>
+          <div class="task-title">${escapeHtml(t.titulo)}</div>
+          ${t.desc ? `<div class="task-desc">${escapeHtml(t.desc)}</div>` : ''}
+        </div>
+        <span class="badge ${meta.cls}">${meta.label}</span>
+      </div>
+      <div class="meta-row">
+        <span>Prioridad: <b>${t.prioridad}</b></span>
+        <span>Entrega: <b>${hasFecha ? fmtDate(t.entrega) : 'Sin definir'}</b></span>
+        ${hasFecha ? `<span>${diasRestantes>=0 ? `Faltan <b>${diasRestantes}</b> día(s)` : `Vencido hace <b>${Math.abs(diasRestantes)}</b> día(s)`}</span>` : ''}
+      </div>
+      ${(t.colaboradores && t.colaboradores.length) ? `<div class="colab-row">${t.colaboradores.map(c=>`<span class="colab-chip">${escapeHtml(c)}</span>`).join('')}</div>` : ''}
+      <div class="ritmo">
+        <div class="fill" style="width:${t.avance}%;background:${barColor};"><span>${t.avance}%</span></div>
+        ${hasFecha ? `<div class="time-mark" style="left:${pctTiempo}%;"></div>` : ''}
+      </div>
+      <div class="ritmo-caption"><span>Avance real</span><span>${hasFecha ? `▏tiempo transcurrido: ${Math.round(pctTiempo)}%` : 'Sin fecha de entrega definida'}</span></div>
+      <input class="range" type="range" min="0" max="100" value="${t.avance}" onchange="askAvanceNote('${t.id}', this.value)">
+      <div class="task-actions" style="margin-top:10px;">
+        <a onclick="openModal('${t.id}')">Editar</a>
+        <a onclick="markDone('${t.id}')">Marcar 100%</a>
+        ${t.cerrado ? `<a onclick="reabrirTask('${t.id}')">Reabrir</a>` : `<a onclick="closeTaskNoAplica('${t.id}')">Cerrar (no aplica)</a>`}
+        <a class="del" onclick="deleteTask('${t.id}')">Eliminar</a>
+      </div>
+      <div class="hist-toggle" onclick="toggleHistory('${t.id}')">
+        <span class="chev" id="chev-${t.id}">${expandedHistory[t.id] ? '▾' : '▸'}</span> Ver historial
+        <span style="margin-left:auto;color:var(--teal-deep);" onclick="event.stopPropagation(); descargarPDFTarea('${t.id}')">📄 PDF de este trabajo</span>
+      </div>
+      <div class="hist-panel" id="hist-${t.id}" style="display:${expandedHistory[t.id] ? 'block' : 'none'};"></div>
+    </div>`;
+  }).join('');
+
+  Object.keys(expandedHistory).forEach(id=>{
+    if(expandedHistory[id] && document.getElementById('hist-'+id)) loadHistory(id);
+  });
+}
+
+function fmtDate(d){
+  if(!d) return 'Sin definir';
+  const [y,m,day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+function escapeHtml(str){
+  return (str||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+let pendingAvance = null;
+
+function askAvanceNote(id, val){
+  const t = tasks.find(x=>x.id===id);
+  if(!t) return;
+  const oldAvance = t.avance;
+  const newAvance = Number(val);
+  if(oldAvance === newAvance) return;
+  pendingAvance = { id, oldAvance, newAvance };
+  document.getElementById('noteAvanceLine').textContent = `${t.titulo}: ${oldAvance}% → ${newAvance}%`;
+  document.getElementById('noteText').value = '';
+  document.getElementById('noteOverlay').classList.add('show');
+}
+
+async function confirmAvanceChange(withNote){
+  if(!pendingAvance) return;
+  const { id, oldAvance, newAvance } = pendingAvance;
+  const nota = withNote ? document.getElementById('noteText').value.trim() : '';
+  const t = tasks.find(x=>x.id===id);
+  if(!t){ pendingAvance = null; document.getElementById('noteOverlay').classList.remove('show'); return; }
+  t.avance = newAvance;
+  const texto = nota
+    ? `Avance: ${oldAvance}% → ${newAvance}% — ${nota}`
+    : `Avance: ${oldAvance}% → ${newAvance}%`;
+  await persistTask(t, [{ texto, tipo:'avance', anterior: oldAvance, nuevo: newAvance }]);
+  pendingAvance = null;
+  document.getElementById('noteOverlay').classList.remove('show');
+}
+
+async function markDone(id){
+  const t = tasks.find(x=>x.id===id);
+  if(!t) return;
+  const oldAvance = t.avance;
+  t.avance = 100;
+  const notes = oldAvance !== 100 ? [{ texto:`Avance: ${oldAvance}% → 100%`, tipo:'avance', anterior: oldAvance, nuevo: 100 }] : [];
+  await persistTask(t, notes);
+  showToast('Trabajo marcado como completado');
+}
+
+async function closeTaskNoAplica(id){
+  const t = tasks.find(x=>x.id===id);
+  if(!t) return;
+  const motivo = prompt('¿Por qué se cierra? (opcional — ej. "reasignado a otra persona", "ya no aplica")') || '';
+  t.cerrado = true;
+  const texto = motivo ? `Trabajo cerrado (no aplica) — ${motivo}` : 'Trabajo cerrado (no aplica)';
+  await persistTask(t, [texto]);
+  showToast('Trabajo cerrado');
+}
+
+async function reabrirTask(id){
+  const t = tasks.find(x=>x.id===id);
+  if(!t) return;
+  t.cerrado = false;
+  await persistTask(t, ['Trabajo reabierto']);
+  showToast('Trabajo reabierto');
+}
+
+async function deleteTask(id){
+  if(!confirm('¿Eliminar este trabajo?')) return;
+  await removeTaskStorage(id);
+  showToast('Trabajo eliminado');
+}
+
+function openModal(id){
+  document.getElementById('overlay').classList.add('show');
+  document.getElementById('f-avance-nota').value = '';
+  if(id){
+    const t = tasks.find(x=>x.id===id);
+    document.getElementById('modalTitle').textContent = 'Editar trabajo';
+    document.getElementById('editId').value = id;
+    document.getElementById('f-titulo').value = t.titulo;
+    document.getElementById('f-desc').value = t.desc||'';
+    document.getElementById('f-inicio').value = t.inicio;
+    document.getElementById('f-entrega').value = t.entrega;
+    document.getElementById('f-prioridad').value = t.prioridad;
+    document.getElementById('f-avance').value = t.avance;
+    document.getElementById('f-colab').value = (t.colaboradores||[]).join(', ');
+  } else {
+    document.getElementById('modalTitle').textContent = 'Nuevo trabajo';
+    document.getElementById('editId').value = '';
+    document.getElementById('f-titulo').value = '';
+    document.getElementById('f-desc').value = '';
+    document.getElementById('f-inicio').value = todayStr();
+    document.getElementById('f-entrega').value = '';
+    document.getElementById('f-prioridad').value = 'media';
+    document.getElementById('f-avance').value = 0;
+    document.getElementById('f-colab').value = '';
+  }
+}
+function closeModal(){ document.getElementById('overlay').classList.remove('show'); }
+
+async function saveTask(){
+  const titulo = document.getElementById('f-titulo').value.trim();
+  const entrega = document.getElementById('f-entrega').value;
+  const inicio = document.getElementById('f-inicio').value || todayStr();
+  if(!titulo){ showToast('Falta el título del trabajo'); return; }
+
+  const editId = document.getElementById('editId').value;
+  const t = { id: editId || null };
+  t.titulo = titulo;
+  t.desc = document.getElementById('f-desc').value.trim();
+  t.inicio = inicio;
+  t.entrega = entrega;
+  t.prioridad = document.getElementById('f-prioridad').value;
+  t.avance = Math.min(100, Math.max(0, Number(document.getElementById('f-avance').value)||0));
+  t.colaboradores = document.getElementById('f-colab').value
+    .split(',').map(s=>s.trim()).filter(Boolean);
+
+  const notes = [];
+  if(editId){
+    const old = tasks.find(x=>x.id===editId);
+    if(old){
+      if(old.avance !== t.avance){
+        const nota = document.getElementById('f-avance-nota').value.trim();
+        const texto = nota ? `Avance: ${old.avance}% → ${t.avance}% — ${nota}` : `Avance: ${old.avance}% → ${t.avance}%`;
+        notes.push({ texto, tipo:'avance', anterior: old.avance, nuevo: t.avance });
+      }
+      if(old.entrega !== t.entrega){
+        notes.push(t.entrega ? `Fecha de entrega cambiada a ${fmtDate(t.entrega)}` : `Se quitó la fecha de entrega`);
+      }
+      const oldColab = old.colaboradores||[];
+      const added = t.colaboradores.filter(c=>!oldColab.includes(c));
+      const removed = oldColab.filter(c=>!t.colaboradores.includes(c));
+      if(added.length) notes.push(`Se agregó a ${added.join(', ')} como colaborador(es)`);
+      if(removed.length) notes.push(`Se quitó a ${removed.join(', ')} de colaboradores`);
+    }
+  }
+
+  await persistTask(t, notes);
+  closeModal();
+  showToast('Trabajo guardado');
+}
+
+function showToast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(()=>el.classList.remove('show'), 2200);
+}
+
+function exportCSV(){
+  if(tasks.length===0){ showToast('No hay trabajos que exportar'); return; }
+  const header = ['Titulo','Descripcion','Colaboradores','Prioridad','Fecha inicio','Fecha entrega','Avance %','Estado'];
+  const rows = tasks.map(t=>[
+    t.titulo, t.desc||'', (t.colaboradores||[]).join('; '), t.prioridad, t.inicio, t.entrega, t.avance, statusMeta(computeStatus(t)).label
+  ]);
+  const csv = [header, ...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(["\uFEFF"+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `seguimiento-trabajos-${todayStr()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV descargado');
+}
+
+async function copyResumen(){
+  if(tasks.length===0){ showToast('No hay trabajos que resumir'); return; }
+  const lineas = tasks.slice().sort(compareEntrega).map(t=>{
+    const meta = statusMeta(computeStatus(t));
+    const colab = (t.colaboradores && t.colaboradores.length) ? ` — con: ${t.colaboradores.join(', ')}` : '';
+    return `• ${t.titulo} — ${t.avance}% avance — entrega ${fmtDate(t.entrega)} — ${meta.label}${colab}`;
+  });
+  const texto = `Resumen de trabajos (${fmtDate(todayStr())})\n\n` + lineas.join('\n');
+  try{
+    await navigator.clipboard.writeText(texto);
+    showToast('Resumen copiado al portapapeles');
+  }catch(e){
+    showToast('No se pudo copiar automáticamente');
+  }
+}
+
+document.getElementById('filterbar').addEventListener('click', (e)=>{
+  const chip = e.target.closest('.chip');
+  if(!chip) return;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  chip.classList.add('active');
+  filterMode = chip.dataset.f;
+  render();
+});
+document.getElementById('sortSel').addEventListener('change', render);
+document.getElementById('overlay').addEventListener('click', (e)=>{ if(e.target.id==='overlay') closeModal(); });
+document.getElementById('noteOverlay').addEventListener('click', (e)=>{
+  if(e.target.id==='noteOverlay'){
+    pendingAvance = null;
+    document.getElementById('noteOverlay').classList.remove('show');
+    render();
+  }
+});
+</script>
+</body>
+</html>
