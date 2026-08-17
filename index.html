@@ -294,6 +294,7 @@
       <button class="btn" onclick="copyResumen()">⎘ Copiar resumen</button>
       <button class="btn" onclick="descargarPDF()">📄 Descargar PDF</button>
       <input type="date" id="reportDate" class="btn" style="padding:9px 10px;color:var(--ink);" title="Fecha de la que quieres ver los avances en el reporte">
+      <button class="btn" id="reportTasksBtn" onclick="openReportTasksModal()">🗂 Elegir trabajos</button>
       <button class="btn" onclick="generarReportePDF()">📊 Reporte de avances</button>
       <button class="btn" id="chartToggleBtn" onclick="toggleChart()">📊 Gráfico</button>
       <button class="btn primary" onclick="openModal()">+ Nuevo trabajo</button>
@@ -411,6 +412,24 @@
     <div class="modal-actions">
       <button class="btn" onclick="confirmAvanceChange(false)">Guardar sin nota</button>
       <button class="btn primary" onclick="confirmAvanceChange(true)">Guardar con nota</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="reportTasksOverlay">
+  <div class="modal" style="max-width:440px;">
+    <h2>Elegir trabajos para el reporte</h2>
+    <div class="sub" style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      Marca solo los trabajos que quieres que aparezcan en el reporte. Si los dejas todos marcados, el reporte incluye todos los trabajos activos.
+    </div>
+    <div style="display:flex;gap:14px;margin-bottom:8px;">
+      <a href="#" style="font-size:12.5px;color:var(--teal);" onclick="setAllReportTasks(true);return false;">Marcar todos</a>
+      <a href="#" style="font-size:12.5px;color:var(--teal);" onclick="setAllReportTasks(false);return false;">Desmarcar todos</a>
+    </div>
+    <div id="reportTasksList" style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px 2px;"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeReportTasksModal()">Cancelar</button>
+      <button class="btn primary" onclick="applyReportTasksSelection()">Aplicar</button>
     </div>
   </div>
 </div>
@@ -1070,10 +1089,7 @@ async function generarReportePDF(){
 
   showToast('Generando reporte...');
 
-  const activos = tasks.filter(t=>{
-    const s = computeStatus(t);
-    return s !== 'cerrado' && s !== 'completado';
-  });
+  const activos = activeTasksForReport().filter(t => !reportSelectedIds || reportSelectedIds.has(t.id));
 
   // Traer, de cada trabajo activo, solo los avances registrados en la fecha elegida
   let detalles = [];
@@ -1183,13 +1199,27 @@ async function generarReportePDF(){
 
   function layoutRow(t, entries){
     const tituloLines = doc.splitTextToSize(String(t.titulo || ''), 118);
-    const tituloLineH = 4.4, notaLineH = 4.0, entryGap = 1.3;
+    const descLines = t.desc ? doc.splitTextToSize(String(t.desc), 172) : [];
     const entryBlocks = entries.map(e => doc.splitTextToSize(`- ${e.when}: ${pdfSafe(e.texto)}`, 168));
-    const notaBlockH = entryBlocks.reduce((sum, lines) => sum + lines.length*notaLineH + entryGap, 0);
-    const topPad = 4, gap1 = 3, barH = 6, gap2 = 3, bottomPad = 4;
+
+    const tituloLineH = 4.4, descLineH = 3.8, notaLineH = 4.0, entryGap = 1.3;
+    const topPad = 4, bottomPad = 4;
+    const gapAfterTitulo = descLines.length ? 2 : 3;
+    const gapAfterDesc = 3;
+    const barH = 6;
+    const gapAfterBar = 3;
+
     const tituloBlockH = tituloLines.length * tituloLineH;
-    const totalH = Math.max(20, topPad + tituloBlockH + gap1 + barH + gap2 + notaBlockH + bottomPad);
-    return { tituloLines, entryBlocks, tituloLineH, notaLineH, entryGap, topPad, gap1, barH, gap2, bottomPad, tituloBlockH, totalH };
+    const descBlockH = descLines.length * descLineH;
+    const notaBlockH = entryBlocks.reduce((sum, lines) => sum + lines.length*notaLineH + entryGap, 0);
+
+    // Posiciones (offset desde el borde superior de la tarjeta)
+    const descOffset = topPad + tituloBlockH + gapAfterTitulo;
+    const barOffset = descOffset + (descLines.length ? descBlockH + gapAfterDesc : 0);
+    const notaOffset = barOffset + barH + gapAfterBar;
+
+    const totalH = Math.max(20, notaOffset + notaBlockH + bottomPad);
+    return { tituloLines, descLines, entryBlocks, tituloLineH, descLineH, notaLineH, entryGap, topPad, descOffset, barOffset, notaOffset, totalH };
   }
 
   for(const { t, entries } of detalles){
@@ -1220,8 +1250,19 @@ async function generarReportePDF(){
     doc.text(`${meta.label.toUpperCase()} · ${(t.prioridad||'').toUpperCase()}`, marginX + 152, y + 6, {align:'center'});
     doc.setTextColor(20,30,45);
 
+    // Descripción del trabajo (de qué se trata), si existe
+    if(L.descLines.length){
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(74,90,107);
+      L.descLines.forEach((line,i)=>{
+        doc.text(line, marginX + 3, y + L.descOffset + 3 + i*L.descLineH);
+      });
+      doc.setTextColor(20,30,45);
+    }
+
     // Barra de avance
-    const barY = y + L.topPad + L.tituloBlockH + L.gap1;
+    const barY = y + L.barOffset;
     doc.setDrawColor(238,241,244);
     doc.setFillColor(238,241,244);
     doc.rect(marginX + 3, barY, 90, 3, 'F');
@@ -1235,7 +1276,7 @@ async function generarReportePDF(){
     doc.setTextColor(20,30,45);
 
     // Avances registrados ese día
-    let cy = barY + L.barH + L.gap2;
+    let cy = y + L.notaOffset;
     doc.setFont('helvetica','italic');
     doc.setFontSize(8);
     doc.setTextColor(18,64,71);
@@ -1583,6 +1624,61 @@ function openModal(id){
   }
 }
 function closeModal(){ document.getElementById('overlay').classList.remove('show'); }
+
+// ---- Selección de trabajos para el reporte de avances ----
+let reportSelectedIds = null; // null = incluir todos los trabajos activos
+
+function activeTasksForReport(){
+  return tasks.filter(t=>{
+    const s = computeStatus(t);
+    return s !== 'cerrado' && s !== 'completado';
+  });
+}
+
+function updateReportTasksBtnLabel(){
+  const btn = document.getElementById('reportTasksBtn');
+  if(!btn) return;
+  const total = activeTasksForReport().length;
+  if(!reportSelectedIds){
+    btn.textContent = '🗂 Elegir trabajos';
+  } else {
+    btn.textContent = `🗂 Trabajos (${reportSelectedIds.size}/${total})`;
+  }
+}
+
+function openReportTasksModal(){
+  const activos = activeTasksForReport();
+  const list = document.getElementById('reportTasksList');
+  if(activos.length === 0){
+    list.innerHTML = '<div style="padding:12px;color:var(--ink-soft);font-size:13px;">No hay trabajos activos.</div>';
+  } else {
+    list.innerHTML = activos.map(t=>{
+      const checked = !reportSelectedIds || reportSelectedIds.has(t.id) ? 'checked' : '';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:7px 8px;font-size:13.5px;cursor:pointer;border-bottom:1px solid var(--paper);">
+        <input type="checkbox" class="report-task-check" value="${t.id}" ${checked}>
+        <span>${(t.titulo||'').replace(/</g,'&lt;')}</span>
+      </label>`;
+    }).join('');
+  }
+  document.getElementById('reportTasksOverlay').classList.add('show');
+}
+
+function closeReportTasksModal(){
+  document.getElementById('reportTasksOverlay').classList.remove('show');
+}
+
+function setAllReportTasks(checked){
+  document.querySelectorAll('.report-task-check').forEach(cb=>{ cb.checked = checked; });
+}
+
+function applyReportTasksSelection(){
+  const boxes = Array.from(document.querySelectorAll('.report-task-check'));
+  const checked = boxes.filter(cb=>cb.checked).map(cb=>cb.value);
+  const total = activeTasksForReport().length;
+  reportSelectedIds = (checked.length === total) ? null : new Set(checked);
+  updateReportTasksBtnLabel();
+  closeReportTasksModal();
+}
 
 async function saveTask(){
   const titulo = document.getElementById('f-titulo').value.trim();
