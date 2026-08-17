@@ -883,6 +883,16 @@ async function fetchHistoryEntries(taskId, limitN){
   }catch(e){ return []; }
 }
 
+async function fetchLatestHistoryEntry(taskId){
+  try{
+    const snap = await tasksCol().doc(taskId).collection('historial').orderBy('fecha','desc').limit(1).get();
+    if(snap.empty) return null;
+    const hd = snap.docs[0].data();
+    const when = hd.fecha && hd.fecha.toDate ? fmtDateTime(hd.fecha.toDate()) : '';
+    return { when, texto: hd.texto || '' };
+  }catch(e){ return null; }
+}
+
 function pdfSafe(str){
   return (str || '')
     .replace(/→/g, '->')
@@ -1043,14 +1053,11 @@ async function generarReportePDF(){
     return s !== 'cerrado' && s !== 'completado';
   });
 
-  // Traer el plan de hoy (si existe) para sacar la "próxima acción" de cada trabajo
-  let accionesPorTitulo = {};
-  try{
-    const doc0 = await planDiaRef().get();
-    if(doc0.exists){
-      (doc0.data().items || []).forEach(it=>{ accionesPorTitulo[it.titulo] = it.accion; });
-    }
-  }catch(e){ /* si falla, el reporte sale sin acciones sugeridas */ }
+  // Traer el último avance registrado de cada trabajo activo (lo más nuevo que se anotó)
+  let ultimoAvancePorId = {};
+  for(const t of activos){
+    ultimoAvancePorId[t.id] = await fetchLatestHistoryEntry(t.id);
+  }
 
   // Traer el historial de planes por día para la línea de tiempo (página 2)
   let historialDias = [];
@@ -1139,7 +1146,7 @@ async function generarReportePDF(){
   // ---- Detalle de trabajos activos ----
   doc.setFont('helvetica','bold');
   doc.setFontSize(12);
-  doc.text('Detalle de trabajos y próxima acción', marginX, y);
+  doc.text('Detalle de trabajos y último avance', marginX, y);
   y += 8;
 
   if(activos.length === 0){
@@ -1151,19 +1158,40 @@ async function generarReportePDF(){
     y += 8;
   }
 
-  activos.forEach(t=>{
-    const rowH = 20;
-    pageNum = checkPageBreak(rowH + 3, pageNum);
-    doc.setDrawColor(215,222,229);
-    doc.rect(marginX, y, 180, rowH);
+  function layoutRow(t, notaCompleta){
+    const tituloLines = doc.splitTextToSize(String(t.titulo || ''), 118);
+    const notaLines = doc.splitTextToSize(notaCompleta, 172);
+    const tituloLineH = 4.4, notaLineH = 4.0;
+    const topPad = 4, gap1 = 3, barH = 6, gap2 = 3, bottomPad = 4;
+    const tituloBlockH = tituloLines.length * tituloLineH;
+    const notaBlockH = notaLines.length * notaLineH;
+    const totalH = Math.max(20, topPad + tituloBlockH + gap1 + barH + gap2 + notaBlockH + bottomPad);
+    return { tituloLines, notaLines, tituloLineH, notaLineH, topPad, gap1, barH, gap2, bottomPad, tituloBlockH, totalH };
+  }
 
+  for(const t of activos){
+    const s = computeStatus(t);
+    const meta = statusMeta(s);
+    const entry = ultimoAvancePorId[t.id];
+    const notaCompleta = entry
+      ? `Ultimo avance (${entry.when}): ${pdfSafe(entry.texto)}`
+      : 'Aun no se ha registrado ningun avance para este trabajo.';
+
+    const L = layoutRow(t, notaCompleta);
+    pageNum = checkPageBreak(L.totalH + 3, pageNum);
+
+    doc.setDrawColor(215,222,229);
+    doc.rect(marginX, y, 180, L.totalH);
+
+    // Título (puede ocupar varias líneas)
     doc.setFont('helvetica','bold');
     doc.setFontSize(10);
     doc.setTextColor(20,30,45);
-    doc.text(String(t.titulo || ''), marginX + 3, y + 6, {maxWidth: 120});
+    L.tituloLines.forEach((line,i)=>{
+      doc.text(line, marginX + 3, y + L.topPad + 3 + i*L.tituloLineH);
+    });
 
-    const s = computeStatus(t);
-    const meta = statusMeta(s);
+    // Insignia de estado · prioridad, alineada con la primera línea del título
     const [r,g,b] = hexToRgb(STATUS_COLORS[s] || '#7c8b9a');
     doc.setFillColor(r,g,b);
     doc.rect(marginX + 128, y + 2.5, 48, 5, 'F');
@@ -1171,27 +1199,35 @@ async function generarReportePDF(){
     doc.setFont('helvetica','bold');
     doc.setFontSize(7);
     doc.text(`${meta.label.toUpperCase()} · ${(t.prioridad||'').toUpperCase()}`, marginX + 152, y + 6, {align:'center'});
+    doc.setTextColor(20,30,45);
 
+    // Barra de avance
+    const barY = y + L.topPad + L.tituloBlockH + L.gap1;
     doc.setDrawColor(238,241,244);
     doc.setFillColor(238,241,244);
-    doc.rect(marginX + 3, y + 10, 90, 3, 'F');
+    doc.rect(marginX + 3, barY, 90, 3, 'F');
     const avance = Math.max(0, Math.min(100, Number(t.avance)||0));
     doc.setFillColor(31,111,120);
-    doc.rect(marginX + 3, y + 10, 90 * (avance/100), 3, 'F');
+    doc.rect(marginX + 3, barY, 90 * (avance/100), 3, 'F');
     doc.setTextColor(90,100,110);
     doc.setFont('helvetica','bold');
     doc.setFontSize(8);
-    doc.text(`${avance}%`, marginX + 97, y + 12.5);
-
-    const accion = accionesPorTitulo[t.titulo];
-    doc.setFont('helvetica','italic');
-    doc.setFontSize(8);
-    doc.setTextColor(18,64,71);
-    doc.text('→ ' + (accion || 'Sin acción sugerida para hoy'), marginX + 3, y + 17, {maxWidth: 172});
+    doc.text(`${avance}%`, marginX + 97, barY + 2.6);
     doc.setTextColor(20,30,45);
 
-    y += rowH + 4;
-  });
+    // Último avance registrado (lo nuevo)
+    const notaTop = barY + L.barH + L.gap2;
+    doc.setFont('helvetica','italic');
+    doc.setFontSize(8);
+    if(entry) doc.setTextColor(18,64,71);
+    else doc.setTextColor(140,148,158);
+    L.notaLines.forEach((line,i)=>{
+      doc.text(line, marginX + 3, notaTop + i*L.notaLineH);
+    });
+    doc.setTextColor(20,30,45);
+
+    y += L.totalH + 4;
+  }
 
   footer(pageNum);
 
