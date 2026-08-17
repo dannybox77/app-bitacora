@@ -883,14 +883,15 @@ async function fetchHistoryEntries(taskId, limitN){
   }catch(e){ return []; }
 }
 
-async function fetchLatestHistoryEntry(taskId){
+async function fetchRecentHistoryEntries(taskId, limitN){
   try{
-    const snap = await tasksCol().doc(taskId).collection('historial').orderBy('fecha','desc').limit(1).get();
-    if(snap.empty) return null;
-    const hd = snap.docs[0].data();
-    const when = hd.fecha && hd.fecha.toDate ? fmtDateTime(hd.fecha.toDate()) : '';
-    return { when, texto: hd.texto || '' };
-  }catch(e){ return null; }
+    const snap = await tasksCol().doc(taskId).collection('historial').orderBy('fecha','desc').limit(limitN||3).get();
+    return snap.docs.map(d=>{
+      const hd = d.data();
+      const when = hd.fecha && hd.fecha.toDate ? fmtDateTime(hd.fecha.toDate()) : '';
+      return { when, texto: hd.texto || '' };
+    });
+  }catch(e){ return []; }
 }
 
 function pdfSafe(str){
@@ -1053,10 +1054,10 @@ async function generarReportePDF(){
     return s !== 'cerrado' && s !== 'completado';
   });
 
-  // Traer el último avance registrado de cada trabajo activo (lo más nuevo que se anotó)
-  let ultimoAvancePorId = {};
+  // Traer los avances mas recientes de cada trabajo activo (lo que se ve en su historial)
+  let historialPorId = {};
   for(const t of activos){
-    ultimoAvancePorId[t.id] = await fetchLatestHistoryEntry(t.id);
+    historialPorId[t.id] = await fetchRecentHistoryEntries(t.id, 3);
   }
 
   // Traer el historial de planes por día para la línea de tiempo (página 2)
@@ -1146,7 +1147,7 @@ async function generarReportePDF(){
   // ---- Detalle de trabajos activos ----
   doc.setFont('helvetica','bold');
   doc.setFontSize(12);
-  doc.text('Detalle de trabajos y último avance', marginX, y);
+  doc.text('Detalle de trabajos y avances recientes', marginX, y);
   y += 8;
 
   if(activos.length === 0){
@@ -1158,26 +1159,25 @@ async function generarReportePDF(){
     y += 8;
   }
 
-  function layoutRow(t, notaCompleta){
+  function layoutRow(t, entries){
     const tituloLines = doc.splitTextToSize(String(t.titulo || ''), 118);
-    const notaLines = doc.splitTextToSize(notaCompleta, 172);
-    const tituloLineH = 4.4, notaLineH = 4.0;
+    const tituloLineH = 4.4, notaLineH = 4.0, entryGap = 1.3;
+    const entryBlocks = entries.length
+      ? entries.map(e => doc.splitTextToSize(`- ${e.when}: ${pdfSafe(e.texto)}`, 168))
+      : [doc.splitTextToSize('- Aun no se ha registrado ningun avance para este trabajo.', 168)];
+    const notaBlockH = entryBlocks.reduce((sum, lines) => sum + lines.length*notaLineH + entryGap, 0);
     const topPad = 4, gap1 = 3, barH = 6, gap2 = 3, bottomPad = 4;
     const tituloBlockH = tituloLines.length * tituloLineH;
-    const notaBlockH = notaLines.length * notaLineH;
     const totalH = Math.max(20, topPad + tituloBlockH + gap1 + barH + gap2 + notaBlockH + bottomPad);
-    return { tituloLines, notaLines, tituloLineH, notaLineH, topPad, gap1, barH, gap2, bottomPad, tituloBlockH, totalH };
+    return { tituloLines, entryBlocks, tituloLineH, notaLineH, entryGap, topPad, gap1, barH, gap2, bottomPad, tituloBlockH, totalH };
   }
 
   for(const t of activos){
     const s = computeStatus(t);
     const meta = statusMeta(s);
-    const entry = ultimoAvancePorId[t.id];
-    const notaCompleta = entry
-      ? `Ultimo avance (${entry.when}): ${pdfSafe(entry.texto)}`
-      : 'Aun no se ha registrado ningun avance para este trabajo.';
+    const entries = historialPorId[t.id] || [];
 
-    const L = layoutRow(t, notaCompleta);
+    const L = layoutRow(t, entries);
     pageNum = checkPageBreak(L.totalH + 3, pageNum);
 
     doc.setDrawColor(215,222,229);
@@ -1215,14 +1215,17 @@ async function generarReportePDF(){
     doc.text(`${avance}%`, marginX + 97, barY + 2.6);
     doc.setTextColor(20,30,45);
 
-    // Último avance registrado (lo nuevo)
-    const notaTop = barY + L.barH + L.gap2;
+    // Avances recientes (del historial del trabajo)
+    let cy = barY + L.barH + L.gap2;
     doc.setFont('helvetica','italic');
     doc.setFontSize(8);
-    if(entry) doc.setTextColor(18,64,71);
-    else doc.setTextColor(140,148,158);
-    L.notaLines.forEach((line,i)=>{
-      doc.text(line, marginX + 3, notaTop + i*L.notaLineH);
+    doc.setTextColor(entries.length ? 18 : 140, entries.length ? 64 : 148, entries.length ? 71 : 158);
+    L.entryBlocks.forEach(lines=>{
+      lines.forEach(line=>{
+        doc.text(line, marginX + 3, cy);
+        cy += L.notaLineH;
+      });
+      cy += L.entryGap;
     });
     doc.setTextColor(20,30,45);
 
