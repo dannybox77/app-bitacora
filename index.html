@@ -592,7 +592,7 @@ async function generarPlanDia(forzado){
     const data = await resp.json();
     if(!resp.ok){
       showToast('Error al generar el plan: ' + (data.error ? JSON.stringify(data.error).slice(0,120) : 'desconocido'));
-      document.getElementById('planDiaCard').style.display = 'none';
+      mostrarErrorPlanDia();
       return;
     }
     let texto = (data.texto || '').trim();
@@ -608,8 +608,16 @@ async function generarPlanDia(forzado){
     showToast('Plan del día listo');
   }catch(e){
     showToast('No se pudo generar el plan del día, intenta de nuevo');
-    document.getElementById('planDiaCard').style.display = 'none';
+    mostrarErrorPlanDia();
   }
+}
+
+function mostrarErrorPlanDia(){
+  document.getElementById('planDiaCard').style.display = 'block';
+  document.getElementById('planDiaFecha').textContent = 'No se pudo generar hoy';
+  document.getElementById('planDiaLista').innerHTML = `
+    <div class="sub">No se pudo generar el plan del día. Puedes darle a "Actualizar plan" para intentarlo de nuevo.</div>
+  `;
 }
 
 function renderPlanDia(plan){
